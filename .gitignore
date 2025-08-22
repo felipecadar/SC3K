@@ -1,2 +1,6 @@
 __pycache__
 train/
+SNOX-Selecao/
+P68/
+*.pcd
+outputs/
