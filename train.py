@@ -87,7 +87,7 @@ def train(cfg):
 def main(cfg):
     omegaconf.OmegaConf.set_struct(cfg, False)
     cfg.log_path = '{}_logs'.format(cfg.task)
-    logger.info(cfg.pretty())
+    # logger.info(cfg.pretty())
     cfg.task = 'generic'
     train(cfg)
 

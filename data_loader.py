@@ -44,8 +44,8 @@ def naive_read_pcd(path):
     lines = lines[idx:]
     lines = [line.rstrip().split(' ') for line in lines]
     data = np.asarray(lines)
-    pc = np.array(data[:, :3], dtype=np.float)
-    colors = np.array(data[:, -1], dtype=np.int)
+    pc = np.array(data[:, :3], dtype=float)
+    colors = np.array(data[:, -1], dtype=int)
     colors = np.stack([(colors >> 16) & 255, (colors >> 8) & 255, colors & 255], -1)
     return pc, colors
 
@@ -81,7 +81,7 @@ def farthest_point_sample(point, npoint):
         mask = dist < distance
         distance[mask] = dist[mask]
         farthest = np.argmax(distance, -1)
-    point = point[centroids.astype(np.int32)]
+    point = point[centroids.astype(int32)]
     return point
 
 
@@ -245,7 +245,7 @@ class canonical_data_loader(torch.utils.data.Dataset):
         if self.cfg.augmentation.gaussian_noise:
             pcd1_updated = add_noise(pcd1_updated, sigma=self.cfg.lamda)
 
-        return pcd1_updated.astype(np.float32),  mesh_name
+        return pcd1_updated.astype(float32),  mesh_name
 
 
     def __len__(self):

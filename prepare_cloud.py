@@ -143,7 +143,7 @@ def voxel_downsample(points: np.ndarray, colors: np.ndarray | None, voxel: float
 	if colors is not None:
 		# colors expected as RGBA; Open3D expects [0,1] RGB. We'll keep RGB if present and drop alpha for downsample.
 		if colors.shape[1] >= 3:
-			rgb = (colors[:, :3].astype(np.float32) / 255.0)
+			rgb = (colors[:, :3].astype(float32) / 255.0)
 			pc.colors = o3d.utility.Vector3dVector(rgb)
 	pc_ds = pc.voxel_down_sample(voxel)
 	pts_ds = np.asarray(pc_ds.points)
@@ -160,10 +160,10 @@ def voxel_downsample(points: np.ndarray, colors: np.ndarray | None, voxel: float
 
 def _to_o3d_cloud(points: np.ndarray, colors: np.ndarray | None) -> o3d.geometry.PointCloud:
 	pc = o3d.geometry.PointCloud()
-	pc.points = o3d.utility.Vector3dVector(points.astype(np.float64))
+	pc.points = o3d.utility.Vector3dVector(points.astype(float64))
 	if colors is not None and colors.size > 0:
 		# Accept RGBA or RGB uint8 and map to Open3D RGB float [0,1]
-		rgb = colors[:, :3].astype(np.float32) / 255.0
+		rgb = colors[:, :3].astype(float32) / 255.0
 		pc.colors = o3d.utility.Vector3dVector(rgb)
 	return pc
 

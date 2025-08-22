@@ -15,10 +15,10 @@ save_results: True
 parameters:
   separation:  1
   overlap:    1
-  shape:     6 
-  consist:    1 
-  volume:    1 
-  pose:    0.07 
+  shape:     6
+  consist:    1
+  volume:    1
+  pose:    0.07
 
 
 augmentation:
@@ -45,4 +45,3 @@ data:
 hydra:
   run:
     dir: ${split}/${class_name}
-

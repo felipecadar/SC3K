@@ -33,7 +33,7 @@ def load_pcd_points(pcd_path: str) -> np.ndarray:
     pc = o3d.io.read_point_cloud(str(p))
     if pc.is_empty():
         raise ValueError(f"Point cloud is empty: {pcd_path}")
-    pts = np.asarray(pc.points, dtype=np.float32)
+    pts = np.asarray(pc.points, dtype=float32)
     return pts
 
 
@@ -46,20 +46,20 @@ def prepare_points(
         pts = normalize_pc(pts)
     if sample_points and sample_points > 0 and pts.shape[0] > sample_points:
         pts = farthest_point_sample(pts, sample_points)
-    return pts.astype(np.float32)
+    return pts.astype(float32)
 
 
 def normalize_with_params(pts: np.ndarray, enabled: bool = True) -> Tuple[np.ndarray, np.ndarray, float]:
     """Normalize like data_loader.normalize_pc but also return mean and scale for inverse mapping."""
     if not enabled:
-        return pts.astype(np.float32), np.zeros(3, dtype=np.float32), 1.0
+        return pts.astype(float32), np.zeros(3, dtype=float32), 1.0
     mean = pts.mean(axis=0)
     centered = pts - mean
     scale = float(np.max(np.linalg.norm(centered, axis=1)))
     if scale <= 0:
         scale = 1.0
-    pts_norm = (centered / scale).astype(np.float32)
-    return pts_norm, mean.astype(np.float32), scale
+    pts_norm = (centered / scale).astype(float32)
+    return pts_norm, mean.astype(float32), scale
 
 
 def divide_bbox(large_bbox: o3d.geometry.AxisAlignedBoundingBox, side_length: float, overlap: float = 0.0) -> List[o3d.geometry.AxisAlignedBoundingBox]:
@@ -94,7 +94,7 @@ def divide_bbox(large_bbox: o3d.geometry.AxisAlignedBoundingBox, side_length: fl
                 current_min_x = min_bound[0] + i * stride
                 current_min_y = min_bound[1] + j * stride
                 current_min_z = min_bound[2] + k * stride
-                small_min = np.array([current_min_x, current_min_y, current_min_z], dtype=np.float32)
+                small_min = np.array([current_min_x, current_min_y, current_min_z], dtype=float32)
 
                 current_max_x = current_min_x + side_length
                 current_max_y = current_min_y + side_length
@@ -103,7 +103,7 @@ def divide_bbox(large_bbox: o3d.geometry.AxisAlignedBoundingBox, side_length: fl
                 final_max_x = min(current_max_x, max_bound[0])
                 final_max_y = min(current_max_y, max_bound[1])
                 final_max_z = min(current_max_z, max_bound[2])
-                small_max = np.array([final_max_x, final_max_y, final_max_z], dtype=np.float32)
+                small_max = np.array([final_max_x, final_max_y, final_max_z], dtype=float32)
 
                 small_bbox = o3d.geometry.AxisAlignedBoundingBox(small_min, small_max)
                 if small_bbox.volume() > 1e-9:
@@ -214,7 +214,7 @@ def main() -> None:
 
             # Optional sampling
             if args.sample and args.sample > 0 and pts_chunk.shape[0] > args.sample:
-                pts_chunk = farthest_point_sample(pts_chunk.astype(np.float32), args.sample)
+                pts_chunk = farthest_point_sample(pts_chunk.astype(float32), args.sample)
 
             # Normalize per-chunk and remember params
             pts_norm, mean, scale = normalize_with_params(pts_chunk, enabled=not args.no_normalize)
