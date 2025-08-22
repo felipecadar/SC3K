@@ -81,8 +81,30 @@ def farthest_point_sample(point, npoint):
         mask = dist < distance
         distance[mask] = dist[mask]
         farthest = np.argmax(distance, -1)
-    point = point[centroids.astype(int32)]
+    point = point[centroids.astype(np.int32)]
     return point
+
+
+def sample_fixed_points(points: np.ndarray, target: int) -> np.ndarray:
+    """Return exactly `target` points.
+    - If more: farthest point sample.
+    - If fewer: sample with replacement to upsample.
+    """
+    n = points.shape[0]
+    if n == target:
+        return points.astype(np.float32)
+    if n > target:
+        pts = points.astype(np.float32)
+        # Pre-reduce very large sets to cap FPS cost
+        cap_factor = 4
+        cap = target * cap_factor
+        if n > cap:
+            idx = np.random.choice(n, size=cap, replace=False)
+            pts = pts[idx]
+        return farthest_point_sample(pts, target)
+    # n < target: upsample with replacement
+    idx = np.random.choice(n, size=target, replace=True)
+    return points[idx].astype(np.float32)
 
 
 def transform(pc, extrinsic_mat):
@@ -96,6 +118,75 @@ preprocess = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
+
+
+def _random_rotation_matrix() -> np.ndarray:
+    """Generate a random 3x3 rotation matrix (right-handed, det=1).
+
+    Uses uniform random unit quaternion sampling.
+    """
+    u1, u2, u3 = np.random.rand(3)
+    q1 = np.sqrt(1 - u1) * np.sin(2 * np.pi * u2)
+    q2 = np.sqrt(1 - u1) * np.cos(2 * np.pi * u2)
+    q3 = np.sqrt(u1) * np.sin(2 * np.pi * u3)
+    q4 = np.sqrt(u1) * np.cos(2 * np.pi * u3)
+    # quaternion to rotation matrix (q = [q1,q2,q3,q4] with q4 as w)
+    x, y, z, w = q1, q2, q3, q4
+    R = np.array([
+        [1 - 2*(y*y + z*z), 2*(x*y - z*w),     2*(x*z + y*w)],
+        [2*(x*y + z*w),     1 - 2*(x*x + z*z), 2*(y*z - x*w)],
+        [2*(x*z - y*w),     2*(y*z + x*w),     1 - 2*(x*x + y*y)],
+    ], dtype=np.float32)
+    return R
+
+
+def divide_bbox(large_bbox: o3d.geometry.AxisAlignedBoundingBox, side_length: float, overlap: float = 0.0):
+    """Divide a big AABB into overlapping cubic tiles."""
+    if side_length <= 0:
+        print("[bold red]Error: side_length for divide_bbox must be positive.[/bold red]")
+        return []
+    if not 0 <= overlap < 1:
+        print("[bold red]Error: overlap must be in the range [0, 1).[/bold red]")
+        return []
+
+    min_bound = large_bbox.min_bound
+    max_bound = large_bbox.max_bound
+    extent = large_bbox.get_extent()
+    stride = side_length * (1 - overlap)
+    if stride <= 1e-9:
+        if any(extent > side_length):
+            print("[bold red]Error: Overlap is too high, resulting in zero stride.[/bold red]")
+        return [large_bbox]
+
+    num_div_x = int(np.ceil(max(0, extent[0] - side_length) / stride)) + 1
+    num_div_y = int(np.ceil(max(0, extent[1] - side_length) / stride)) + 1
+    num_div_z = int(np.ceil(max(0, extent[2] - side_length) / stride)) + 1
+
+    out = []
+    for i in range(num_div_x):
+        for j in range(num_div_y):
+            for k in range(num_div_z):
+                cur_min = np.array([
+                    min_bound[0] + i * stride,
+                    min_bound[1] + j * stride,
+                    min_bound[2] + k * stride,
+                ], dtype=np.float32)
+                cur_max = cur_min + side_length
+                cur_max = np.minimum(cur_max, max_bound)
+                small = o3d.geometry.AxisAlignedBoundingBox(cur_min, cur_max)
+                if small.volume() > 1e-9:
+                    out.append(small)
+    return out
+
+
+def inside_aabb_mask(points: np.ndarray, aabb: o3d.geometry.AxisAlignedBoundingBox) -> np.ndarray:
+    minb = aabb.min_bound
+    maxb = aabb.max_bound
+    return (
+        (points[:, 0] >= minb[0]) & (points[:, 0] <= maxb[0]) &
+        (points[:, 1] >= minb[1]) & (points[:, 1] <= maxb[1]) &
+        (points[:, 2] >= minb[2]) & (points[:, 2] <= maxb[2])
+    )
 
 
 class generic_data_loader(torch.utils.data.Dataset):
@@ -245,11 +336,97 @@ class canonical_data_loader(torch.utils.data.Dataset):
         if self.cfg.augmentation.gaussian_noise:
             pcd1_updated = add_noise(pcd1_updated, sigma=self.cfg.lamda)
 
-        return pcd1_updated.astype(float32),  mesh_name
+        return pcd1_updated.astype(np.float32), mesh_name
 
 
     def __len__(self):
         return len(self.transformed_pcds)
+
+
+class single_pcd_data_loader(torch.utils.data.Dataset):
+    """
+    Dataset that overfits on a single PCD by generating pairs via random rotations.
+
+    Returns tuples compatible with training loss:
+      (pc1[Nx3], rot1[3x3], pc2[Nx3], rot2[3x3], name)
+    """
+    def __init__(self, cfg, split: str):
+        super().__init__()
+        self.cfg = cfg
+        self.split = split
+        self.path = getattr(cfg.data, 'single_pcd_path', None)
+        if self.path is None or len(str(self.path)) == 0:
+            raise ValueError("cfg.data.single_pcd_path must be set for single_pcd_data_loader")
+
+        p = os.path.join(BASEDIR, self.path) if not os.path.isabs(self.path) else self.path
+        pc = o3d.io.read_point_cloud(p)
+        if pc.is_empty():
+            raise ValueError(f"Point cloud is empty: {p}")
+        self.pc = np.asarray(pc.points, dtype=np.float32)
+        self.name = os.path.splitext(os.path.basename(p))[0]
+
+        # Optional chunking
+        self.chunk_size = float(getattr(cfg.data, 'single_chunk_size', 0.0) or 0.0)
+        self.chunk_overlap = float(getattr(cfg.data, 'single_chunk_overlap', 0.0) or 0.0)
+        self.min_chunk_points = int(getattr(cfg.data, 'single_min_chunk_points', 0) or 0)
+
+        self.chunk_indices = None
+        if self.chunk_size > 0.0:
+            pc_o3d = o3d.geometry.PointCloud()
+            pc_o3d.points = o3d.utility.Vector3dVector(self.pc.astype(float))
+            big = pc_o3d.get_axis_aligned_bounding_box()
+            tiles = divide_bbox(big, side_length=self.chunk_size, overlap=self.chunk_overlap)
+            inds = []
+            for tile in tiles:
+                mask = inside_aabb_mask(self.pc, tile)
+                idxs = np.nonzero(mask)[0]
+                if self.min_chunk_points > 0 and idxs.shape[0] < self.min_chunk_points:
+                    continue
+                if idxs.shape[0] > 0:
+                    inds.append(idxs)
+            if not inds:
+                raise ValueError("No chunks meet the minimum point requirement; adjust single_chunk_size/overlap/min_chunk_points.")
+            self.chunk_indices = inds
+
+        # Fixed target points per sample (enforce for stable batching)
+        self.target_points = int(getattr(cfg, 'sample_points', 2048) or 2048)
+
+        # Length per epoch
+        self.len = getattr(cfg.data, 'single_pairs_per_epoch_train', 1000) if split == 'train' \
+            else getattr(cfg.data, 'single_pairs_per_epoch_val', 200)
+
+    def __len__(self):
+        return self.len
+
+    def __getitem__(self, idx):
+        # Choose points (whole cloud or a chunk)
+        if self.chunk_indices is not None:
+            # round-robin over chunks for determinism
+            cidx = idx % len(self.chunk_indices)
+            pts = self.pc[self.chunk_indices[cidx]]
+        else:
+            pts = self.pc
+
+        # Two random rotations
+        R1 = _random_rotation_matrix().astype(np.float32)
+        R2 = _random_rotation_matrix().astype(np.float32)
+
+        pc1 = (pts @ R1.T).astype(np.float32)
+        pc2 = (pts @ R2.T).astype(np.float32)
+
+        if self.cfg.augmentation.normalize_pc:
+            pc1 = normalize_pc(pc1)
+            pc2 = normalize_pc(pc2)
+
+        # Always enforce fixed-size sampling for batching
+        pc1 = sample_fixed_points(pc1, self.target_points)
+        pc2 = sample_fixed_points(pc2, self.target_points)
+
+        if self.cfg.augmentation.gaussian_noise:
+            pc1 = add_noise(pc1, sigma=self.cfg.lamda)
+            pc2 = add_noise(pc2, sigma=self.cfg.lamda2)
+
+        return pc1.astype(np.float32), R1, pc2.astype(np.float32), R2, self.name
 
 
 

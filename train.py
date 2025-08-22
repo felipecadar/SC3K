@@ -13,8 +13,13 @@ logger = logging.getLogger(__name__)
 
 def train(cfg):
     writer = SummaryWriter("train_summary")
-
-    KeypointDataset = getattr(dataset, 'generic_data_loader')
+    # Choose dataset: default generic; if single_pcd_path is set, overfit a single PCD
+    single_path = getattr(cfg.data, 'single_pcd_path', '')
+    if isinstance(single_path, str) and len(single_path) > 0:
+        KeypointDataset = getattr(dataset, 'single_pcd_data_loader')
+        logger.info(f"Using single_pcd_data_loader with path: {single_path}")
+    else:
+        KeypointDataset = getattr(dataset, 'generic_data_loader')
 
     train_dataset = KeypointDataset(cfg, 'train')
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=cfg.batch_size, shuffle=True,

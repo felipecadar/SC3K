@@ -2,11 +2,11 @@ Paper: SC3K -- Self-supervised and Coherent 3D Keypoints Estimation from Rotated
 
 split: train
 task: canonical # generic or canonical
-key_points: 10
-batch_size: 26
-max_epoch: 5
+key_points: 128
+batch_size: 16
+max_epoch: 30
 num_workers: 6
-class_name: airplane
+class_name: plataform
 overlap_threshold: 0.05 # 0.05
 
 save_results: True
@@ -31,7 +31,7 @@ augmentation:
 
 lamda: 0 #0.01
 lamda2:  0 # 0.02
-sample_points:  2048
+sample_points:  10240
 
 
 data:
@@ -41,6 +41,14 @@ data:
   poses_root: dataset/poses
 #  best_model_path: 'please set the path'
   best_model_path : train/airplane/Best_airplane_10kp.pth
+  # If set, training will overfit on this single PCD using random rotations
+  single_pcd_path: "P68/P68_cad.pcd"  # e.g., P68/P68_scan.pcd
+  single_pairs_per_epoch_train: 1000
+  single_pairs_per_epoch_val: 200
+  # Optional chunking for large PCDs during training
+  single_chunk_size: 2.0        # e.g., 1.0 -> cubic chunks of 1 unit side
+  single_chunk_overlap: 0.25     # fraction [0,1)
+  single_min_chunk_points: 4096    # skip chunks smaller than this
 
 hydra:
   run:
