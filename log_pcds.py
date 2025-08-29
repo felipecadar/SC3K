@@ -18,6 +18,7 @@ from typing import Iterable, Optional
 
 import numpy as np
 import open3d as o3d
+from tqdm import tqdm
 
 
 def load_pcd(path: str) -> o3d.geometry.PointCloud:
@@ -68,10 +69,11 @@ def main() -> None:
             f"Original import error: {e}"
         )
 
+    import rerun as rr
     rr.init("PCD Viewer")
     rr.spawn()
 
-    for i, pcd_path in enumerate(args.pcds):
+    for i, pcd_path in enumerate(tqdm(args.pcds, desc="Processing PCD files")):
         name = Path(pcd_path).stem
         try:
             pc = load_pcd(pcd_path)
@@ -84,7 +86,31 @@ def main() -> None:
             col = default_color(i)
             cols = np.repeat(col[None, :], pts.shape[0], axis=0)
 
-        rr.log(f"cloud/{name}", rr.Points3D(positions=pts, colors=cols, radii=0.003))
+        # Create voxel grid version for visualization (better performance)
+        voxel_size = 0.01  # 1cm voxels for good balance of detail and performance
+        pc_downsampled = pc.voxel_down_sample(voxel_size=voxel_size)
+        pts_downsampled = np.asarray(pc_downsampled.points)
+        
+        # Update colors for downsampled version
+        if pc_downsampled.has_colors():
+            cols_downsampled = (np.asarray(pc_downsampled.colors) * 255.0).astype(np.uint8)
+            if cols_downsampled.ndim == 2 and cols_downsampled.shape[1] == 3:
+                alpha = np.full((cols_downsampled.shape[0], 1), 255, dtype=np.uint8)
+                cols_downsampled = np.concatenate([cols_downsampled, alpha], axis=1)
+        else:
+            cols_downsampled = cols[:len(pts_downsampled)]  # Use original colors for downsampled points
+
+        print(f"Visualizing {name}: {len(pts_downsampled)} points (downsampled from {len(pts)} for performance)")
+        rr.log(f"cloud/{name}", rr.Points3D(positions=pts_downsampled, colors=cols_downsampled, radii=0.003))
+
+        # Log bounding box
+        bbx = pc.get_axis_aligned_bounding_box()
+        center = bbx.get_center()
+        half_size = bbx.get_extent() / 2
+        rr.log(f"cloud/{name}_bbox", rr.Boxes3D(
+            centers=np.array([center]),
+            half_sizes=np.array([half_size])
+        ))
 
 
 if __name__ == "__main__":

@@ -98,10 +98,10 @@ def test_generic_pose(cfg):
 
 
 
-@hydra.main(config_path='config', config_name='config')
+@hydra.main(config_path='config', config_name='config_generated_test')
 def main(cfg):
     omegaconf.OmegaConf.set_struct(cfg, False)
-    logger.info(cfg.pretty())
+    # logger.info(cfg.pretty())
 
     if cfg.split != "test":
         print("Please set cfg.split as \'test\' in the configuration file")

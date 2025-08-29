@@ -4,3 +4,7 @@ SNOX-Selecao/
 P68/
 *.pcd
 outputs/
+generated_dataset/
+mv3_data/
+train/
+test/

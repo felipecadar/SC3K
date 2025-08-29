@@ -26,11 +26,14 @@ from data_loader import normalize_pc, farthest_point_sample
 import visualizations as viz
 
 
-def load_pcd_points(pcd_path: str) -> np.ndarray:
+def load_pcd_points(pcd_path: str, downsample=0.01) -> np.ndarray:
     p = Path(pcd_path)
     if not p.exists():
         raise FileNotFoundError(f"PCD not found: {pcd_path}")
     pc = o3d.io.read_point_cloud(str(p))
+    # voxel downsample if requested
+    if downsample and downsample > 0:
+        pc = pc.voxel_down_sample(voxel_size=downsample)
     if pc.is_empty():
         raise ValueError(f"Point cloud is empty: {pcd_path}")
     pts = np.asarray(pc.points, dtype=np.float32)
@@ -156,7 +159,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run SC3K on a single PCD file")
     parser.add_argument("--pcd", required=True, help="Path to .pcd file")
     parser.add_argument("--weights", required=True, help="Path to model weights (.pth)")
-    parser.add_argument("--keypoints", type=int, default=10, help="Number of keypoints (must match weights)")
+    parser.add_argument("--keypoints", type=int, default=64, help="Number of keypoints (must match weights)")
     parser.add_argument("--no-normalize", action="store_true", help="Disable point cloud normalization")
     parser.add_argument("--sample", type=int, default=0, help="Optional farthest point sampling count (0 = no sampling)")
     parser.add_argument("--device", default="auto", help="Device to run on")
@@ -197,6 +200,7 @@ def main() -> None:
     stem = Path(args.pcd).stem
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
+    
 
     if args.chunk_size and args.chunk_size > 0:
         # Compute AABB and tiles
@@ -274,6 +278,8 @@ def main() -> None:
 
     # Optional rerun logging
     if args.rerun:
+        import seaborn as sns
+        palette = sns.color_palette("bright", n_colors=max(10, len(kp_all)))
         try:
             import rerun as rr
         except Exception as e:
@@ -288,11 +294,11 @@ def main() -> None:
             cloud_color = np.array([200, 200, 200, 255], dtype=np.uint8)
             if args.chunk_size and args.chunk_size > 0:
                 # Per-chunk colors
-                palette = [
-                    (255, 99, 99, 255), (99, 181, 255, 255), (99, 255, 148, 255),
-                    (255, 214, 99, 255), (207, 99, 255, 255), (99, 255, 240, 255),
-                    (255, 140, 140, 255), (140, 200, 255, 255), (140, 255, 200, 255),
-                ]
+                # palette = [
+                #     (255, 99, 99, 255), (99, 181, 255, 255), (99, 255, 148, 255),
+                #     (255, 214, 99, 255), (207, 99, 255, 255), (99, 255, 240, 255),
+                #     (255, 140, 140, 255), (140, 200, 255, 255), (140, 255, 200, 255),
+                # ]
                 rr.log(f"cloud/{stem}", rr.Points3D(positions=pts_full, colors=np.repeat(cloud_color[None, :], pts_full.shape[0], axis=0), radii=0.003))
                 # Log combined KPs with a single layer; optionally could log per-chunk
                 kp_colors = np.repeat(np.array(palette[0], dtype=np.uint8)[None, :], kp_all.shape[0], axis=0)

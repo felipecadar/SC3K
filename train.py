@@ -23,13 +23,15 @@ def train(cfg):
 
     train_dataset = KeypointDataset(cfg, 'train')
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=cfg.batch_size, shuffle=True,
-                                                   num_workers=cfg.num_workers, drop_last=False)
+                                                   num_workers=cfg.num_workers, drop_last=False, pin_memory=True,
+                                                   persistent_workers=True, prefetch_factor=2)
 
     val_dataset = KeypointDataset(cfg, 'val')
     val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=cfg.batch_size, shuffle=True,
-                                                 num_workers=cfg.num_workers, drop_last=False)
+                                                 num_workers=cfg.num_workers, drop_last=False, pin_memory=True,
+                                                 persistent_workers=True, prefetch_factor=2)
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:3' if torch.cuda.is_available() else 'cpu')
     model = network.sc3k(cfg).to(device) # cuda()   # unsupervised network
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
@@ -44,9 +46,12 @@ def train(cfg):
         meter.reset()
         model.train()
         for i, data in enumerate(train_iter):
+            # Move data to device
+            data = [d.to(device) if isinstance(d, torch.Tensor) else d for d in data]
 
             kp1, kp2 = model(data)
             loss = function_bank.compute_loss(kp1, kp2, data, writer, train_step, cfg, split='train')
+            
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -65,6 +70,9 @@ def train(cfg):
         val_iter = tqdm(val_dataloader)
         for i, data in enumerate(val_iter):
             with torch.no_grad():
+                # Move data to device
+                data = [d.to(device) if isinstance(d, torch.Tensor) else d for d in data]
+                
                 kp1, kp2 = model(data)
                 loss = function_bank.compute_loss(kp1, kp2, data, writer, val_step, cfg, split='val')
 
@@ -88,7 +96,7 @@ def train(cfg):
 
 
 
-@hydra.main(config_path='config', config_name='config')
+@hydra.main(config_path='config', config_name='config_generated')
 def main(cfg):
     omegaconf.OmegaConf.set_struct(cfg, False)
     cfg.log_path = '{}_logs'.format(cfg.task)

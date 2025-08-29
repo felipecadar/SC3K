@@ -51,9 +51,9 @@ def save_kp_and_pc_in_pcd(pc, kp, output_dir, save=True, name=""):
 
     '''
 
-    palette_PC = sns.color_palette()
-    palette = sns.color_palette("bright")
-    palette_dark = sns.color_palette("dark")
+    palette_PC = sns.color_palette(n_colors=len(kp))
+    palette = sns.color_palette("bright", n_colors=len(kp))
+    palette_dark = sns.color_palette("dark", n_colors=len(kp))
 
     pcd = o3d.geometry.TriangleMesh.create_sphere(radius=0.008)
     pcd.translate(pc[0])

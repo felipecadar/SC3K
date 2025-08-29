@@ -29,25 +29,25 @@ ID2NAMES = {"02691156": "airplane",
             "03797390": "mug",
             "04225987": "skateboard",
             "04379243": "table",
-            "04530566": "vessel", }
+            "04530566": "vessel", 
+            "44444444": "plataform",
+        }
 
 NAMES2ID = {v: k for k, v in ID2NAMES.items()}
 
 
 def naive_read_pcd(path):
-    lines = open(path, 'r').readlines()
-    idx = -1
-    for i, line in enumerate(lines):
-        if line.startswith('DATA ascii'):
-            idx = i + 1
-            break
-    lines = lines[idx:]
-    lines = [line.rstrip().split(' ') for line in lines]
-    data = np.asarray(lines)
-    pc = np.array(data[:, :3], dtype=float)
-    colors = np.array(data[:, -1], dtype=int)
-    colors = np.stack([(colors >> 16) & 255, (colors >> 8) & 255, colors & 255], -1)
-    return pc, colors
+    # Use Open3D to read PCD files (handles both ASCII and binary formats)
+    pcd = o3d.io.read_point_cloud(path)
+    points = np.asarray(pcd.points)
+    colors = np.asarray(pcd.colors)
+    if colors.size == 0:
+        # If no colors, create white colors
+        colors = np.ones((points.shape[0], 3), dtype=np.uint8) * 255
+    else:
+        # Convert from float [0,1] to uint8 [0,255]
+        colors = (colors * 255).astype(np.uint8)
+    return points, colors
 
 
 def add_noise(x, sigma=0.015, clip=0.05):
@@ -210,9 +210,15 @@ class generic_data_loader(torch.utils.data.Dataset):
         for i in range(len(selected_cat)):
             pcd_paths_np += glob(os.path.join(BASEDIR, cfg.data.pcd_root, selected_cat[i], '*.pcd'))
 
-        self.nclasses = max([max([kp_info['semantic_id'] for kp_info in annot['keypoints']]) for annot in annots]) + 1
+        # Calculate nclasses - handle case where semantic_id might not exist (self-supervised learning)
+        try:
+            self.nclasses = max([max([kp_info['semantic_id'] for kp_info in annot['keypoints']]) for annot in annots]) + 1
+        except KeyError:
+            # For self-supervised learning, set nclasses to 1 since semantic classes are not used
+            self.nclasses = 1
+
         split_models = open(os.path.join(BASEDIR, cfg.data.splits_root, "{}.txt".format(split))).readlines()
-        split_models = [m.split('-')[-1].rstrip('\n') for m in split_models]
+        split_models = [m.split('-', 1)[1].rstrip('\n') for m in split_models]
 
         mesh_names = []
         camera_param_np = []
@@ -238,6 +244,12 @@ class generic_data_loader(torch.utils.data.Dataset):
             camera_param_np_2.append(cam_lst[::-1])
             pointCloud_lst.append(pc_list)
             pointCloud_lst_2.append(pc_list[::-1])
+
+        self.transformed_pcds = pointCloud_lst
+        self.transformed_pcds_2 = pointCloud_lst_2
+        self.camera_param = camera_param_np
+        self.camera_param_2 = camera_param_np_2
+        self.mesh_names = mesh_names
 
         print("\n\nPlease wait, arranging the data\n\n")
         self.camera_param_np = list(itertools.chain.from_iterable(camera_param_np))     # combine array elements in
@@ -266,6 +278,7 @@ class generic_data_loader(torch.utils.data.Dataset):
 
         if self.cfg.augmentation.down_sample:
             pcd1 = farthest_point_sample(pcd1, self.cfg.sample_points)
+            pcd2 = farthest_point_sample(pcd2, self.cfg.sample_points)
 
         if self.cfg.augmentation.gaussian_noise:
             pcd1 = add_noise(pcd1, sigma=self.cfg.lamda)
@@ -299,9 +312,15 @@ class canonical_data_loader(torch.utils.data.Dataset):
         for i in range(len(selected_cat)):
             pcd_paths_np += glob(os.path.join(BASEDIR, cfg.data.pcd_root, selected_cat[i], '*.pcd'))
 
-        self.nclasses = max([max([kp_info['semantic_id'] for kp_info in annot['keypoints']]) for annot in annots]) + 1
+        # Calculate nclasses - handle case where semantic_id might not exist (self-supervised learning)
+        try:
+            self.nclasses = max([max([kp_info['semantic_id'] for kp_info in annot['keypoints']]) for annot in annots]) + 1
+        except KeyError:
+            # For self-supervised learning, set nclasses to 1 since semantic classes are not used
+            self.nclasses = 1
+
         split_models = open(os.path.join(BASEDIR, cfg.data.splits_root, "{}.txt".format(split))).readlines()
-        split_models = [m.split('-')[-1].rstrip('\n') for m in split_models]
+        split_models = [m.split('-', 1)[1].rstrip('\n') for m in split_models]
 
         mesh_names = []
         pointCloud_lst = []

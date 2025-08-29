@@ -1,0 +1,128 @@
+# SC3K Configuration File - Self-supervised and Coherent 3D Keypoints Estimation
+# Paper: SC3K -- Self-supervised and Coherent 3D Keypoints Estimation from Rotated, Noisy, and Decimated Point Cloud Data (ICCV-2023)
+
+# =============================================================================
+# BASIC TRAINING PARAMETERS
+# =============================================================================
+
+# Training mode: 'train' for training, 'val' for validation, 'test' for testing
+split: test
+
+# Task type: 'canonical' (fixed canonical poses) or 'generic' (arbitrary poses)
+task: generic
+
+# Number of keypoints to detect on each object
+key_points: 64
+
+# Batch size for training
+batch_size: 64
+
+# Maximum number of training epochs
+max_epoch: 30
+
+# Number of CPU workers for data loading
+num_workers: 12
+
+# Object category/class name for training
+class_name: plataform
+
+# Minimum overlap threshold for keypoint matching (0.0-1.0)
+# Intuition: Higher threshold = stricter matching, fewer but more reliable correspondences
+overlap_threshold: 0.05
+
+# Whether to save training results and checkpoints
+save_results: True
+
+# =============================================================================
+# LOSS FUNCTION PARAMETERS
+# These control the multi-task loss weights for self-supervised learning
+# =============================================================================
+
+parameters:
+  # Separation loss weight - encourages keypoints to be well-separated
+  # Intuition: Prevents keypoints from clustering together
+  separation: 1
+
+  # Overlap loss weight - penalizes overlapping keypoints
+  # Intuition: Ensures distinct keypoint locations
+  overlap: 1
+
+  # Shape consistency loss weight - enforces geometric coherence
+  # Intuition: Keypoints should maintain consistent relative positions
+  shape: 6
+
+  # Consistency loss weight - enforces temporal/viewpoint consistency
+  # Intuition: Same keypoints should be detected across different views
+  consist: 1
+
+  # Volume preservation loss weight - maintains 3D structure
+  # Intuition: Prevents keypoints from collapsing to 2D or losing depth
+  volume: 1
+
+  # Pose consistency loss weight - enforces pose-invariant detection
+  # Intuition: Keypoints should be detectable regardless of object orientation
+  pose: 0.07
+
+# =============================================================================
+# DATA AUGMENTATION PARAMETERS
+# These control preprocessing and augmentation applied to point clouds
+# =============================================================================
+
+augmentation:
+  # Random translation augmentation
+  translation: False
+
+  # Rotation around gravity axis (yaw rotation)
+  rot_gravity: False
+
+  # Point cloud normalization (center and scale)
+  # Intuition: Removes scale and position dependencies for better generalization
+  normalize_pc: True
+
+  # Gaussian noise addition to point coordinates
+  # Intuition: Simulates sensor noise and makes model robust to imperfect data
+  gaussian_noise: False
+
+  # Point cloud downsampling to fixed number of points
+  down_sample: True
+  uniform_sampling: True
+
+# =============================================================================
+# NOISE PARAMETERS
+# Control amount of noise added during training
+# =============================================================================
+
+# Standard deviation of Gaussian noise for first point cloud
+# Intuition: 0 = no noise, higher values = more robustness to noise
+lamda: 0
+
+# Standard deviation of Gaussian noise for second point cloud
+# Intuition: Different noise levels for the two views in self-supervised learning
+lamda2: 0
+
+# Number of points to sample after downsampling
+# Intuition: Balance between detail preservation and computational efficiency
+sample_points: 4096 #2048
+
+# =============================================================================
+# DATA PATHS
+# File paths for datasets, annotations, and outputs
+# =============================================================================
+
+data:
+  annot_path: generated_dataset/annotations/plataform.json
+  pcd_root: generated_dataset/pcds
+  splits_root: generated_dataset/splits
+  poses_root: generated_dataset/poses
+  best_model_path: train/plataform/Best_plataform_64kp.pth
+
+# =============================================================================
+# HYDRA CONFIGURATION
+# Controls experiment logging and output directories
+# =============================================================================
+
+hydra:
+  run:
+    # Output directory for logs and checkpoints
+    # Uses variable substitution: {split}/{class_name} = train/plataform
+    dir: ${split}/${class_name}
